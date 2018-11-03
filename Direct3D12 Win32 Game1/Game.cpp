@@ -65,6 +65,10 @@ void Game::Update(DX::StepTimer const& timer)
 
     // TODO: Add your game logic here.
     elapsedTime;
+
+	float time = float(timer.GetTotalSeconds());
+
+	m_world = Matrix::CreateRotationZ(cosf(time) * 2.f);
 }
 
 // Draws the scene.
@@ -80,6 +84,12 @@ void Game::Render()
     Clear();
 
     // TODO: Add your rendering code here.
+	ID3D12DescriptorHeap* heaps[] = { m_modelResources->Heap(), m_states->Heap() };
+	m_commandList->SetDescriptorHeaps(_countof(heaps), heaps);
+
+	Model::UpdateEffectMatrices(m_modelFog, m_world, m_view, m_proj);
+
+	m_model->Draw(m_commandList.Get(), m_modelFog.cbegin());
 
     // Show the new frame.
     Present();
@@ -284,6 +294,68 @@ void Game::CreateDevice()
 
     // TODO: Initialize device dependent objects here (independent of window size).
 	m_graphicsMemory = std::make_unique<GraphicsMemory>(m_d3dDevice.Get());
+
+	m_states = std::make_unique<CommonStates>(m_d3dDevice.Get());
+
+	m_model = Model::CreateFromSDKMESH(L"cup.sdkmesh");
+
+	ResourceUploadBatch resourceUpload(m_d3dDevice.Get());
+
+	resourceUpload.Begin();
+
+	m_model->LoadStaticBuffers(m_d3dDevice.Get(), resourceUpload);
+
+	m_modelResources = m_model->LoadTextures(m_d3dDevice.Get(), resourceUpload);
+
+	m_fxFactory = std::make_unique<EffectFactory>(m_modelResources->Heap(), m_states->Heap());
+
+	auto uploadResourcesFinished = resourceUpload.End(m_commandQueue.Get());
+
+	uploadResourcesFinished.wait();
+
+	RenderTargetState rtState(DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D32_FLOAT);
+
+	EffectPipelineStateDescription pd(
+		nullptr,
+		CommonStates::Opaque,
+		CommonStates::DepthDefault,
+		CommonStates::CullClockwise,
+		rtState);
+
+	EffectPipelineStateDescription pdAlpha(
+		nullptr,
+		CommonStates::AlphaBlend,
+		CommonStates::DepthDefault,
+		CommonStates::CullClockwise,
+		rtState);
+
+	m_modelNormal = m_model->CreateEffects(*m_fxFactory, pd, pdAlpha);
+
+	m_fxFactory->EnableFogging(true);
+	m_fxFactory->EnablePerPixelLighting(true);
+	m_modelFog = m_model->CreateEffects(*m_fxFactory, pd, pdAlpha);
+
+	for (auto& effect : m_modelFog)
+	{
+		auto lights = dynamic_cast<IEffectLights*>(effect.get());
+		if (lights)
+		{
+			lights->SetLightEnabled(0, true);
+			lights->SetLightDiffuseColor(0, Colors::Gold);
+			lights->SetLightEnabled(1, false);
+			lights->SetLightEnabled(2, false);
+		}
+
+		auto fog = dynamic_cast<IEffectFog*>(effect.get());
+		if (fog)
+		{
+			fog->SetFogColor(Colors::CornflowerBlue);
+			fog->SetFogStart(3.f);
+			fog->SetFogEnd(4.f);
+		}
+	}
+
+	m_world = Matrix::Identity;
 }
 
 // Allocate all memory resources that change on a window SizeChanged event.
@@ -411,6 +483,10 @@ void Game::CreateResources()
     m_d3dDevice->CreateDepthStencilView(m_depthStencil.Get(), &dsvDesc, m_dsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
     // TODO: Initialize windows-size dependent objects here.
+	m_view = Matrix::CreateLookAt(Vector3(2.f, 2.f, 2.f),
+		Vector3::Zero, Vector3::UnitY);
+	m_proj = Matrix::CreatePerspectiveFieldOfView(XM_PI / 4.f,
+		float(backBufferWidth) / float(backBufferHeight), 0.1f, 10.f);
 }
 
 void Game::WaitForGpu() noexcept
@@ -499,6 +575,13 @@ void Game::GetAdapter(IDXGIAdapter1** ppAdapter)
 void Game::OnDeviceLost()
 {
     // TODO: Perform Direct3D resource cleanup.
+	m_graphicsMemory.reset();
+	m_states.reset();
+	m_fxFactory.reset();
+	m_modelResources.reset();
+	m_model.reset();
+	m_modelNormal.clear();
+	m_modelFog.clear();
 
     for (UINT n = 0; n < c_swapBufferCount; n++)
     {
@@ -515,8 +598,6 @@ void Game::OnDeviceLost()
     m_commandQueue.Reset();
     m_d3dDevice.Reset();
     m_dxgiFactory.Reset();
-
-	m_graphicsMemory.reset();
 
     CreateDevice();
     CreateResources();
