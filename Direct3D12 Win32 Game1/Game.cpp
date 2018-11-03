@@ -297,7 +297,7 @@ void Game::CreateDevice()
 
 	m_states = std::make_unique<CommonStates>(m_d3dDevice.Get());
 
-	m_model = Model::CreateFromSDKMESH(L"cup.sdkmesh");
+	m_model = Model::CreateFromSDKMESH(L"torus.sdkmesh");
 
 	ResourceUploadBatch resourceUpload(m_d3dDevice.Get());
 
