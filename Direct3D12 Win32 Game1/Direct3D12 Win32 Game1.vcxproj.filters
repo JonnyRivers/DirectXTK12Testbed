@@ -40,4 +40,8 @@
   <ItemGroup>
     <None Include="cup.sdkmesh" />
   </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="torus.sdkmesh" />
+    <CopyFileToFolders Include="torus.jpg" />
+  </ItemGroup>
 </Project>
