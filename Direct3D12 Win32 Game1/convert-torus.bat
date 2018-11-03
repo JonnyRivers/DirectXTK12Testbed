@@ -1,0 +1,1 @@
+meshconvert torus._obj -sdkmesh -nodds -y -flipu
